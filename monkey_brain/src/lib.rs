@@ -1,4 +1,4 @@
-use ndarray::{Array2, Array1, Array};
+use ndarray::{Array2, Array1, Array, Ix2};
 use ndarray_rand::RandomExt;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -46,6 +46,11 @@ impl Net {
         sigx.mapv(|a| 1.0 - a) * sigx 
     }
 
+    fn cost_prime(output_activations: &Array1<f64>, targets: &Array1<f64>) -> Array1<f64> {
+        // partial derivatives vector of cost w.r.t. output activations
+        return output_activations - targets
+    }
+
     pub fn forward_pass(&self, inputs: &Array1<f64>) -> Array1<f64> {
         let mut a = inputs.clone();
         for (b, w) in self.biases.iter().zip(&self.weights) {
@@ -68,11 +73,13 @@ impl Net {
         }
 
         for(x, y) in mini_batch.iter() {
-            let (delta_grad_b, delta_grad_w) = self.back_prop(x, y);
-            for (gb, dgb) in grad_b.iter_mut().zip(&delta_grad_b) {
+            // back_prop returns the gradient of w and b for a single 
+            // training example (x, y)
+            let (grad_b_xy, grad_w_xy) = self.backprop(x, y);
+            for (gb, dgb) in grad_b.iter_mut().zip(&grad_b_xy) {
                 *gb += dgb;
             }
-            for (gw, dgw) in grad_w.iter_mut().zip(&delta_grad_w) {
+            for (gw, dgw) in grad_w.iter_mut().zip(&grad_w_xy) {
                 *gw += dgw;
             }
         }
@@ -108,12 +115,74 @@ impl Net {
         i_max
     }
 
-    fn back_prop(
+    fn backprop(
         &self, x: &Array1<f64>, y: &Array1<f64>
     ) -> (Vec<Array1<f64>>, Vec<Array2<f64>>) {
-        (Vec::new(), Vec::new())
-    }
+        // Return a tuple (grad_b, grad_w) representing the
+        // gradient for the cost function. 
+        let mut grad_b = Vec::new();
+        let mut grad_w = Vec::new();
 
+        for (b, w) in self.biases.iter().zip(&self.weights) {
+            grad_b.push(Array1::<f64>::zeros(b.raw_dim()));
+            grad_w.push(Array2::<f64>::zeros(w.raw_dim()));
+        }
+
+        let mut activations = vec![x.clone()];
+        let mut weighted_inputs = Vec::new();
+
+        for (b, w) in self.biases.iter().zip(&self.weights) {
+            let previous_activation = activations.last().unwrap();
+            let z = w.dot(previous_activation) + b;
+            activations.push(Net::sigmoid(&z));
+            weighted_inputs.push(z);
+        }
+
+        // 1st equation for error in the output layer
+        let error = Net::cost_prime(
+            &activations.pop().unwrap(), y
+        ) * Net::sigmoid_prime(weighted_inputs.last().unwrap());
+
+        let second_to_last_act = activations
+            .pop()
+            .unwrap()
+            .into_dimensionality::<Ix2>()
+            .unwrap();
+            
+        let error_2d = error.clone()
+            .into_dimensionality::<Ix2>()
+            .unwrap();
+
+        grad_w.last_mut().unwrap().assign(&error_2d.dot(&second_to_last_act.t()));
+        grad_b.last_mut().unwrap().assign(&error);
+        
+        
+        for l in (1 ..= self.n_layers - 2).rev() {
+            // segond equation for error in terms of the error
+            // in the next layer
+            // l is the index of the next layer
+            // for 3 layers, the layer idxs are 0, 1, 2
+            // the weights w_1 and w_2 have indexes w[0] and w[1]
+            let error = self.weights[l].t().dot(&error)
+                        * Net::sigmoid_prime(&weighted_inputs[l - 1]);
+
+            grad_b[l - 1].assign(&error);
+      
+            let act = activations
+                .pop()
+                .unwrap()
+                .into_dimensionality::<Ix2>()
+                .unwrap();
+            
+            let error_2d = error
+                .clone()
+                .into_dimensionality::<Ix2>()
+                .unwrap();
+            grad_w[l - 1] = error_2d.dot(&act.t());
+        }
+        
+        (grad_b, grad_w)
+    }
 }
 
 
@@ -151,11 +220,14 @@ impl SGD {
             for mini_batch in train_set.chunks(self.mini_batch_size) {
                 net.update_parameters(mini_batch, self.learn_rate)
             }
+            self.log_performance(net, epoch);
         }
     }
 
-    fn log_performance(self, net: Net, epoch: usize) {
+    fn log_performance(&self, net: &Net, epoch: usize) {
         let n_correct = net.evaluate(&self.test_set);
+        let percentage = n_correct as f64 / self.test_set.len() as f64;
+        println!("Epoch {} / {}: ACC {}", epoch, self.epochs, percentage);
     }
 }
 
