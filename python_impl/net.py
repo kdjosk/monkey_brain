@@ -35,19 +35,16 @@ class Net:
         return activation
     
     def update_parameters(self, mini_batch: DataSet, learning_rate: float) -> None:
-        grad_b = [np.zeros_like(b) for b in self._biases]
-        grad_w = [np.zeros_like(w) for w in self._weights]
-        
-        for data, target in mini_batch:
-            delta_grad_b, delta_grad_w = self._back_prop(data, target)
-            grad_b = self._get_new_gradients(grad_b, delta_grad_b)
-            grad_w = self._get_new_gradients(grad_w, delta_grad_w)
+        X = np.hstack([ex[0] for ex in mini_batch])
+        y = np.hstack([ex[1] for ex in mini_batch])
+
+        vgrad_b, vgrad_w = self._back_prop(X, y)
 
         self._weights = self._get_new_parameters(
-            self._weights, grad_w, learning_rate, len(mini_batch))
+            self._weights, vgrad_w, learning_rate, len(mini_batch))
         
         self._biases = self._get_new_parameters(
-            self._biases, grad_b, learning_rate, len(mini_batch))
+            self._biases, vgrad_b, learning_rate, len(mini_batch))
         
     def evaluate(self, test_set: DataSet) -> int:
         # Calculate number of correct answers
@@ -57,10 +54,6 @@ class Net:
     def _cost_derivative(self, output_activations, targets):
         # Cost for a data sample x is 0.5 * (activations(x) - target)**2
         return output_activations - targets
-        
-    @staticmethod
-    def _get_new_gradients(grad_x: List[np.ndarray], delta_grad_x: List[np.ndarray]) -> List[np.ndarray]:
-        return [x + delta_x for x, delta_x in zip(grad_x, delta_grad_x)]
     
     def _get_new_parameters(
         self,
@@ -70,21 +63,22 @@ class Net:
         sample_size: int
     ) -> List[np.ndarray]:
         return [p - learning_rate * grad_p / sample_size for p, grad_p in zip(params, grad_params)]
-    
-    def _back_prop(self, data, target):
+
+    def _back_prop(self, X, y):
+        # X and y are matrices with horizontally stacked examples and labels
         grad_b = [np.zeros_like(b) for b in self._biases]
         grad_w = [np.zeros_like(w) for w in self._weights]
 
-        activations = [data]
+        activations = [X]
         weighted_inputs = []
         for b, w in zip(self._biases, self._weights):
             weighted_inputs.append(np.matmul(w, activations[-1]) + b)
             activations.append(self._sigmoid(weighted_inputs[-1]))
 
-        error = self._cost_derivative(activations[-1], target) * \
+        error = self._cost_derivative(activations[-1], y) * \
             self._sigmoid_derivative(weighted_inputs[-1])
             
-        grad_b[-1] = error
+        grad_b[-1] = np.expand_dims(error.sum(axis=1), axis=1)
         grad_w[-1] = np.matmul(error, activations[-2].transpose())
 
         # for layers L - 1 ... 2, but indexes are L - 2 ... 1
@@ -93,9 +87,9 @@ class Net:
             sig_der = self._sigmoid_derivative(weighted_inputs[l - 1])
             # weights, grad_b and grad_w lists have n_layers - 1 elements
             error = np.matmul(self._weights[l].transpose(), error) * sig_der
-            grad_b[l - 1] = error
+            grad_b[l - 1] = np.expand_dims(error.sum(axis=1), axis=1)
             grad_w[l - 1] = np.matmul(error, activations[l - 1].transpose())
- 
+
         return (grad_b, grad_w)
     
 

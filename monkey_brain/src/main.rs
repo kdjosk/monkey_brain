@@ -1,5 +1,4 @@
 use monkey_brain::{Net, SGD, load_data, one_hot};
-use ndarray::Array2;
 
 fn main() {
     let train_set = load_data("train").unwrap();

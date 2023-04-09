@@ -1,5 +1,5 @@
 
-use ndarray::{Array2, Array1, Array, Ix2, Axis};
+use ndarray::{Array2, Array, Axis, concatenate};
 use ndarray_rand::RandomExt;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -66,24 +66,17 @@ impl Net {
         mini_batch: &[(Array2<f64>, Array2<f64>)], 
         learn_rate: f64
     ) {
-        let mut grad_b = Vec::new();
-        let mut grad_w = Vec::new();
-        for (b, w) in self.biases.iter().zip(&self.weights) {
-            grad_b.push(Array2::<f64>::zeros(b.raw_dim()));
-            grad_w.push(Array2::<f64>::zeros(w.raw_dim()));
+        let mut mb_iter = mini_batch.iter();
+        let mb_first = mb_iter.next().unwrap();
+        let mut x_mat = mb_first.0.clone();
+        let mut y_mat = mb_first.1.clone();
+
+        for (x, y) in mb_iter {
+            x_mat = concatenate![Axis(1), x_mat, *x];
+            y_mat = concatenate![Axis(1), y_mat, *y];
         }
 
-        for(x, y) in mini_batch.iter() {
-            // back_prop returns the gradient of w and b for a single 
-            // training example (x, y)
-            let (grad_b_xy, grad_w_xy) = self.backprop(x, y);
-            for (gb, dgb) in grad_b.iter_mut().zip(&grad_b_xy) {
-                *gb += dgb;
-            }
-            for (gw, dgw) in grad_w.iter_mut().zip(&grad_w_xy) {
-                *gw += dgw;
-            }
-        }
+        let (grad_b, grad_w) = self.backprop(&x_mat, &y_mat);
 
         let scaled_rate = learn_rate / mini_batch.len() as f64;
         for (w, gw) in self.weights.iter_mut().zip(&grad_w) {
@@ -149,7 +142,7 @@ impl Net {
             .unwrap();
         
         *grad_w.last_mut().unwrap() = error.dot(&act.t());
-        grad_b.last_mut().unwrap().assign(&error);
+        *grad_b.last_mut().unwrap() = error.sum_axis(Axis(1)).insert_axis(Axis(1));
         
         for l in (1 ..= self.n_layers - 2).rev() {
             // segond equation for error in terms of the error
@@ -160,7 +153,7 @@ impl Net {
             let error = self.weights[l].t().dot(&error)
                         * Net::sigmoid_prime(&weighted_inputs[l - 1]);
 
-            grad_b[l - 1].assign(&error);
+            grad_b[l - 1] = error.sum_axis(Axis(1)).insert_axis(Axis(1));
       
             let act = activations
                 .pop()
@@ -205,10 +198,7 @@ impl SGD {
 
         for epoch in 0..self.epochs {
             train_set.shuffle(&mut rng);
-            let mut samples_left = self.train_set.len();
             for mini_batch in train_set.chunks(self.mini_batch_size) {
-                samples_left -= mini_batch.len();
-                // println!("Updating net params on a minibatch {}", samples_left);
                 net.update_parameters(mini_batch, self.learn_rate)
             }
             self.log_performance(net, epoch);
