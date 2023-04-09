@@ -1,3 +1,4 @@
+// extern crate blas_src;
 use monkey_brain::{Net, SGD, load_data, one_hot};
 
 fn main() {

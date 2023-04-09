@@ -209,6 +209,6 @@ impl SGD {
         let n_correct = net.evaluate(&self.test_set);
         let n_samples = self.test_set.len();
         let percentage = n_correct as f64 / n_samples as f64;
-        println!("Epoch {} / {}: ACC {} / {} = {}", epoch, self.epochs, n_correct, n_samples, percentage);
+        println!("Epoch {} / {}: ACC {} / {} = {}", epoch + 1, self.epochs, n_correct, n_samples, percentage);
     }
 }
