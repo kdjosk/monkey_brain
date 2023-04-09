@@ -8,4 +8,9 @@ edition = "2021"
 [dependencies]
 ndarray-rand = "0.14.0"
 ndarray = "0.15.6"
+# ndarray = {version = "0.15.6", features = ["blas"]}
+# blas-src = { version = "0.8", features = ["openblas"] }
+# openblas-src = { version = "0.10", features = ["cblas", "system"] }
 rand = "0.8.5"
+byteorder = "1.4.3"
+flate2 = "1.0.25"
